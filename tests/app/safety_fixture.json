@@ -1,0 +1,30 @@
+[
+  {
+    "id": "fixture-earthquake-1",
+    "topic": "earthquake",
+    "license": "CC0-1.0. Project-written for this repository. Not an external page.",
+    "source": "project-written",
+    "text": "Earthquake quake seismic marker. Not an instruction."
+  },
+  {
+    "id": "fixture-heat-1",
+    "topic": "heat",
+    "license": "CC0-1.0. Project-written for this repository. Not an external page.",
+    "source": "project-written",
+    "text": "Heat heatwave warmth marker. Not an instruction."
+  },
+  {
+    "id": "fixture-health-1",
+    "topic": "health",
+    "license": "CC0-1.0. Project-written for this repository. Not an external page.",
+    "source": "project-written",
+    "text": "Health wellness marker. Not an instruction."
+  },
+  {
+    "id": "fixture-earthquake-my-1",
+    "topic": "earthquake",
+    "license": "CC0-1.0. Project-written for this repository. Not an external page.",
+    "source": "project-written",
+    "text": "ဤသည်မှာ ငလျင်အတွက် စမ်းသပ်အညွှန်းဖြစ်သည်။ ညွှန်ကြားချက် မဟုတ်ပါ။"
+  }
+]
