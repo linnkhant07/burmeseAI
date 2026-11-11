@@ -21,6 +21,14 @@ from burmeseai.retrieve import (
 FIXTURE = Path(__file__).with_name("safety_fixture.json")
 
 
+def _chunk_score(index: Index, query: str, chunk_id: str) -> float:
+    tokens = ngrams(query)
+    for index_at, chunk in enumerate(index.chunks):
+        if chunk.id == chunk_id:
+            return index._score(tokens, index_at)
+    raise AssertionError(chunk_id)
+
+
 class GraphemeTests(unittest.TestCase):
     def test_widths_are_three_four_and_five(self) -> None:
         self.assertEqual(NGRAM_WIDTHS, (3, 4, 5))
@@ -57,7 +65,7 @@ class GraphemeTests(unittest.TestCase):
 
     def test_combining_mark_stays_on_its_base(self) -> None:
         self.assertEqual(grapheme_clusters("e\u0301"), ["é"])
-        self.assertEqual(grapheme_clusters("ကာ"), ["ကာ"])
+        self.assertEqual(grapheme_clusters("ကာ"), ["က", "ာ"])
         self.assertEqual(grapheme_clusters("င်"), ["င်"])
         self.assertEqual(grapheme_clusters("လျ"), ["လျ"])
 
@@ -66,10 +74,14 @@ class GraphemeTests(unittest.TestCase):
         self.assertEqual(grapheme_clusters(stacked), [stacked])
         self.assertEqual(grapheme_clusters("က\u103aခ"), ["က\u103a", "ခ"])
         self.assertEqual(grapheme_clusters("ကခ"), ["က", "ခ"])
+        # Independent vowel U+1021 is an InCB consonant, so the virama holds.
+        self.assertEqual(grapheme_clusters("အ\u1039က"), ["အ\u1039က"])
+        # UAX #29 grapheme test: ÷ 1019 × 1039 × 1018 ÷ 102C × 1037 ÷
+        self.assertEqual(grapheme_clusters("မ္ဘာ့"), ["မ္ဘ", "ာ့"])
 
     def test_myanmar_word_and_its_single_trigram(self) -> None:
-        self.assertEqual(grapheme_clusters("မြန်မာ"), ["မြ", "န်", "မာ"])
-        self.assertEqual(ngrams("မြန်မာ"), ["မြန်မာ"])
+        self.assertEqual(grapheme_clusters("မြန်မာ"), ["မြ", "န်", "မ", "ာ"])
+        self.assertEqual(ngrams("မြန်မာ"), ["မြန်မ", "န်မာ", "မြန်မာ"])
         self.assertEqual(grapheme_clusters("ငလျင်"), ["င", "လျ", "င်"])
         self.assertEqual(ngrams("ငလျင်"), ["ငလျင်"])
 
@@ -166,6 +178,24 @@ class IndexTests(unittest.TestCase):
         self.assertEqual([hit.chunk_id for hit in health.hits], ["fixture-health-1"])
         myanmar = index.search("ငလျင်")
         self.assertEqual([hit.chunk_id for hit in myanmar.hits], ["fixture-earthquake-my-1"])
+
+    def test_cutoff_clears_the_shared_trigram_and_keeps_the_myanmar_hit(self) -> None:
+        index = Index(load_chunks(str(FIXTURE)))
+        shared = max(
+            _chunk_score(index, "hea", "fixture-heat-1"),
+            _chunk_score(index, "health", "fixture-heat-1"),
+        )
+        myanmar = _chunk_score(index, "ငလျင်", "fixture-earthquake-my-1")
+        self.assertGreater(shared, 0.0)
+        self.assertGreater(SCORE_CUTOFF, shared)
+        self.assertLessEqual(SCORE_CUTOFF, myanmar)
+        refused = index.search("hea")
+        self.assertTrue(refused.refused)
+        self.assertEqual(refused.reason, "low_score")
+        self.assertEqual(refused.hits, [])
+        health = index.search("health")
+        self.assertEqual([hit.chunk_id for hit in health.hits], ["fixture-health-1"])
+        self.assertFalse(index.search("ငလျင်").refused)
 
     def test_common_trigram_scores_below_the_cutoff(self) -> None:
         index = Index(load_chunks(str(FIXTURE)))

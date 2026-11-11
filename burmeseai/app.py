@@ -150,7 +150,8 @@ def load_convert_mixed():
 
     The mixed-line converter is burmeseai.zawgyi.convert_mixed. That module
     is optional at runtime. ImportError means the wrapper is not installed,
-    and the caller keeps the original string.
+    and the caller keeps the original string. A runtime failure, including a
+    missing Node.js 20, does the same so routing and refusal still run.
     """
     try:
         from burmeseai.zawgyi import convert_mixed
@@ -166,7 +167,11 @@ def convert_text(text: str, converter: Callable[[str], str] | None = None) -> Co
     convert_mixed = load_convert_mixed()
     if convert_mixed is None:
         return Conversion(original=text, unicode=text, converted=False)
-    return Conversion(original=text, unicode=convert_mixed(text), converted=True)
+    try:
+        unicode_text = convert_mixed(text)
+    except (RuntimeError, OSError):
+        return Conversion(original=text, unicode=text, converted=False)
+    return Conversion(original=text, unicode=unicode_text, converted=True)
 
 
 def route(text: str) -> Route:

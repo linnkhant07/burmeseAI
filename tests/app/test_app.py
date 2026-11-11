@@ -89,6 +89,17 @@ class RouterTests(unittest.TestCase):
         self.assertEqual(conversion.unicode, "heat nearby")
         self.assertTrue(conversion.converted)
 
+    def test_converter_runtime_failure_keeps_the_original_and_refuses(self) -> None:
+        def broken(_text: str) -> str:
+            raise RuntimeError("convertLine requires Node.js 20")
+
+        with mock.patch.object(app, "load_convert_mixed", return_value=broken):
+            reply = app.respond("earthquake nearby", index=Index())
+        self.assertFalse(reply.converted)
+        self.assertEqual(reply.text, "earthquake nearby")
+        self.assertTrue(reply.refused)
+        self.assertEqual(reply.reply, f"{app.MODEL_NOT_LOADED}\n{app.DISCLAIMER}")
+
     def test_missing_zawgyi_import_is_documented_and_keeps_the_original(self) -> None:
         self.assertIn("burmeseai.zawgyi.convert_mixed", app.load_convert_mixed.__doc__)
         self.assertIn("ImportError", app.load_convert_mixed.__doc__)

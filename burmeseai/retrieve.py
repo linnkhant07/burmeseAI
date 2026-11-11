@@ -18,13 +18,39 @@ NGRAM_WIDTHS = (3, 4, 5)
 K1 = 1.5
 B = 0.75
 # A top score below this floor is a miss. Equal to the floor is a hit.
-# The floor is a product cutoff, not a measured recall figure. On the
-# project fixture it drops a single shared trigram such as the overlap
-# between "health" and "heat".
-SCORE_CUTOFF = 1.0
+# The floor is a product cutoff, not a measured recall figure. It refuses a
+# shared trigram such as the overlap of "health" and "heat", and it keeps a
+# full hit such as the Myanmar earthquake label.
+SCORE_CUTOFF = 1.1
 
-_MYANMAR_BLOCK = range(0x1000, 0x10A0)
-_MYANMAR_INDEPENDENT_VOWELS = set(range(0x1021, 0x102B)) | set(range(0x1052, 0x1056))
+# Grapheme_Cluster_Break = SpacingMark in the Myanmar block. Other Mc marks
+# in the block, including U+102B, U+102C, and U+1038, are Other.
+_MYANMAR_SPACING_MARK = frozenset({0x1031, 0x103B, 0x103C, 0x1056, 0x1057, 0x1084})
+# Indic_Conjunct_Break for the Myanmar block. Linker is U+1039 only.
+_INCB_CONSONANT = (
+    (0x1000, 0x102A),
+    (0x103F, 0x103F),
+    (0x1050, 0x1055),
+    (0x105A, 0x105D),
+    (0x1061, 0x1061),
+    (0x1065, 0x1066),
+    (0x106E, 0x1070),
+    (0x1075, 0x1081),
+    (0x108E, 0x108E),
+)
+_INCB_EXTEND = (
+    (0x102D, 0x1030),
+    (0x1032, 0x1037),
+    (0x103A, 0x103A),
+    (0x103D, 0x103E),
+    (0x1058, 0x1059),
+    (0x105E, 0x1060),
+    (0x1071, 0x1074),
+    (0x1082, 0x1082),
+    (0x1085, 0x1086),
+    (0x108D, 0x108D),
+    (0x109D, 0x109D),
+)
 _MYANMAR_VIRAMA = "\u1039"
 
 
@@ -275,6 +301,15 @@ def _is_extend_or_zwj(char: str) -> bool:
     return 0xFE00 <= code <= 0xFE0F or 0xE0100 <= code <= 0xE01EF
 
 
+def _is_spacing_mark(char: str) -> bool:
+    """True for Grapheme_Cluster_Break SpacingMark, not for every Mc."""
+    return ord(char) in _MYANMAR_SPACING_MARK
+
+
+def _in_ranges(code: int, ranges: tuple[tuple[int, int], ...]) -> bool:
+    return any(start <= code <= end for start, end in ranges)
+
+
 def _hangul(char: str) -> str | None:
     code = ord(char)
     if 0x1100 <= code <= 0x115F or 0xA960 <= code <= 0xA97C:
@@ -292,10 +327,9 @@ def _incb(char: str) -> str:
     if char == _MYANMAR_VIRAMA:
         return "Linker"
     code = ord(char)
-    if code in _MYANMAR_BLOCK and unicodedata.category(char) == "Lo":
-        if code not in _MYANMAR_INDEPENDENT_VOWELS:
-            return "Consonant"
-    if unicodedata.category(char) in ("Mn", "Me", "Mc"):
+    if _in_ranges(code, _INCB_CONSONANT):
+        return "Consonant"
+    if _in_ranges(code, _INCB_EXTEND):
         return "Extend"
     return "None"
 
@@ -327,7 +361,7 @@ def _should_break(current: str, nxt: str, *, incb_state: str, ri_count: int) -> 
             return False
     if _is_extend_or_zwj(nxt):
         return False
-    if unicodedata.category(nxt) == "Mc":
+    if _is_spacing_mark(nxt):
         return False
     if _is_prepend(current):
         return False
