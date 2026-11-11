@@ -1,0 +1,24 @@
+zawgyi
+Copyright 2026 Arckara
+
+This product includes software developed by Google LLC as part of myanmar-tools
+(https://github.com/google/myanmar-tools), licensed under the Apache License,
+Version 2.0:
+
+  * third_party/myanmar-tools/zawgyiUnicodeModel.dat, the Zawgyi detection model
+  * third_party/myanmar-tools/Z2U.js and U2Z.js, the CLDR Zawgyi and Unicode
+    transliteration rules
+  * third_party/myanmar-tools/test, Google's test documents
+
+These files are included unmodified. src/detector.mjs is ported from Google's
+zawgyi_detector.ts and changed to expose the model's evidence for any part of a
+line. src/transliterate.mjs reproduces the transliteration runner from Google's
+zawgyi_converter.ts.
+
+The benchmark sentences in bench/sentences.txt and the cases derived from them in
+bench/cases.jsonl come from Burmese Wikipedia (the wikimedia/wikipedia dump
+20231101.my) and are available under the Creative Commons Attribution-ShareAlike
+4.0 License.
+
+Some cases in test/regressions.json quote short lines from CC-100
+(https://data.statmt.org/cc-100/), a web corpus drawn from Common Crawl.
