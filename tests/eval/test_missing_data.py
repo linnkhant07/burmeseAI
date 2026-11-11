@@ -251,6 +251,9 @@ class MissingDataTest(unittest.TestCase):
             self.assertEqual(body[0]["status"], NOT_MEASURED)
             self.assertIsNone(body[0]["score"])
             self.assertFalse((root / "runs").exists())
+            printed = json.loads(report_proc.stdout)
+            self.assertEqual(printed["status"], NOT_MEASURED)
+            self.assertNotIn("score", printed)
 
 
 if __name__ == "__main__":

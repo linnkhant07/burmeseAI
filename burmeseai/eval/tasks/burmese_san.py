@@ -1,19 +1,22 @@
 """BURMESE-SAN: 3,920 items, seven tasks.
 
-Accuracy covers QA, sentiment, toxicity, causal reasoning, and NLI.
-Abstractive summarization uses character ROUGE-L F1.
-Machine translation stays unmeasured: this process does not compute MetricX-24
-and does not put another metric in that cell.
+QA is a span match. Sentiment, toxicity, causal reasoning, and NLI are
+accuracy. Summarization uses XL-Sum multilingual ROUGE-L when that scorer
+is installed. Machine translation is MetricX-24 from a local checkpoint.
+Prompts are read from the data directory. A missing template file, a missing
+scorer, or a missing checkpoint leaves that cell unmeasured.
 """
 
 from __future__ import annotations
 
+import json
 import sys
 from collections import Counter
 from pathlib import Path
 
 from burmeseai.eval.io_util import read_records
-from burmeseai.eval.scoring import label_match, mean_rouge, span_match
+from burmeseai.eval.scoring import label_match, span_match
+from burmeseai.eval.xlsum_rouge import mean_rouge_l
 
 TASK_NAMES = ("qa", "sa", "td", "cr", "nli", "as", "mt")
 EXPECTED = {
@@ -33,18 +36,8 @@ EXPECTED_LABELS = {
 }
 MT_DIRECTIONS = {"eng_to_mya": 850, "mya_to_eng": 850}
 
-_PROMPTS = {
-    "qa": "Answer the question with the span from the passage and nothing else.",
-    "sa": "Reply with one label: positive, negative, or neutral.",
-    "td": "Reply with one label: clean or hate.",
-    "cr": "Reply with one label: cause or effect.",
-    "nli": "Reply with one label: contradiction, entailment, or neutral.",
-    "as": "Write a one-sentence summary of the passage.",
-    "mt": "Translate the sentence. Reply with the translation only.",
-}
 
-
-def load(data_dir: Path) -> list[dict] | None:
+def load(data_dir: Path) -> dict | None:
     directory = data_dir / "burmese-san"
     rows = read_records(directory / "items.jsonl")
     if rows is None:
@@ -55,7 +48,22 @@ def load(data_dir: Path) -> list[dict] | None:
     ids = [item["id"] for item in items]
     if len(ids) != len(set(ids)):
         raise ValueError("duplicate BURMESE-SAN ids")
-    return items
+    return {"items": items, "prompts": load_prompts(directory / "prompts.json")}
+
+
+def load_prompts(path: Path) -> dict[str, str] | None:
+    if not path.is_file() or path.stat().st_size == 0:
+        return None
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("BURMESE-SAN prompts are not an object")
+    prompts = {}
+    for name in TASK_NAMES:
+        text = payload.get(name)
+        if not isinstance(text, str) or not text.strip():
+            return None
+        prompts[name] = text
+    return prompts
 
 
 def _normalize(row: dict, index: int) -> dict:
@@ -80,16 +88,13 @@ def _normalize(row: dict, index: int) -> dict:
     return item
 
 
-def prompt(item: dict) -> str:
-    instruction = _PROMPTS[item["task"]]
-    choices = ""
-    if item["choices"]:
-        rendered = ", ".join(item["choices"])
-        choices = f"\nLabels: {rendered}"
-    direction = ""
-    if item["task"] == "mt":
-        direction = f"\nDirection: {item['direction']}"
-    return f"{instruction}{choices}{direction}\n\n{item['input']}"
+def prompt(item: dict, prompts: dict[str, str]) -> str:
+    template = prompts[item["task"]]
+    return template.format(
+        input=item["input"],
+        choices=", ".join(item["choices"]),
+        direction=item.get("direction") or "",
+    )
 
 
 def grouped(items: list[dict]) -> dict[str, list[dict]]:
@@ -128,7 +133,7 @@ def score_task(task: str, items: list[dict], predictions: dict[str, dict]) -> fl
             (str(predictions[item["id"]].get("prediction", "")), item["label"])
             for item in items
         ]
-        return mean_rouge(pairs)
+        return mean_rouge_l(pairs)
     if task == "qa":
         hits = sum(
             span_match(str(predictions[item["id"]].get("prediction", "")), item["label"])

@@ -15,6 +15,7 @@ from pathlib import Path
 
 from burmeseai.eval.frozen_humaneval import FROZEN_HUMANEVAL_TASK_IDS
 from burmeseai.eval.generate import find_weights, make_generator
+from burmeseai.eval import metricx
 from burmeseai.eval.io_util import read_records
 from burmeseai.eval.schema import (
     ARC_EMPTY,
@@ -71,7 +72,7 @@ def build_report(
     for model_id in MODEL_ORDER:
         for task_id in TASK_ORDER:
             report["tasks"][task_id]["models"][model_id] = _score_saved(
-                task_id, model_id, data_dir, predictions_dir
+                task_id, model_id, data_dir, predictions_dir, weights_dir
             )
     return report
 
@@ -94,6 +95,8 @@ def run_task(
         return _blank(task_id, "data unreadable")
     if loaded is None:
         return _blank(task_id, "data absent")
+    if task_id == "burmese_san" and not loaded.get("prompts"):
+        return _blank(task_id, "Burmese prompt templates are absent")
     weights = find_weights(model_id, weights_dir)
     if generate is None and weights is None:
         return _blank(task_id, "weights absent")
@@ -106,7 +109,7 @@ def run_task(
     if rows is None:
         return _blank(task_id, "generation failed")
     _write_run(predictions_dir, model_id, task_id, rows)
-    return _score_loaded(task_id, loaded, rows)
+    return _score_loaded(task_id, loaded, rows, weights_dir)
 
 
 def _generate_rows(task_id: str, loaded, generate) -> list[dict] | None:
@@ -118,10 +121,19 @@ def _generate_rows(task_id: str, loaded, generate) -> list[dict] | None:
                     prediction = generate(text, enable_thinking=False)
                     rows.append(_row(item_id, prediction, direction=direction))
             return rows
+        if task_id == "burmese_san":
+            items = loaded["items"]
+            prompts = loaded["prompts"]
+            for item in items:
+                prediction = generate(
+                    burmese_san.prompt(item, prompts),
+                    enable_thinking=False,
+                )
+                rows.append(_row(item["id"], prediction))
+            return rows
         items = loaded
         prompt_for = {
             "belebele": belebele.prompt,
-            "burmese_san": burmese_san.prompt,
             "gsm8k": gsm8k.prompt,
             "humaneval": humaneval.prompt,
         }[task_id]
@@ -175,7 +187,13 @@ def _atomic_text(path: Path, text: str) -> None:
     temporary.replace(path)
 
 
-def _score_saved(task_id: str, model_id: str, data_dir: Path, predictions_dir: Path) -> dict:
+def _score_saved(
+    task_id: str,
+    model_id: str,
+    data_dir: Path,
+    predictions_dir: Path,
+    weights_dir: Path,
+) -> dict:
     try:
         loaded = _load_task(task_id, data_dir)
     except (OSError, ValueError, json.JSONDecodeError):
@@ -191,10 +209,10 @@ def _score_saved(task_id: str, model_id: str, data_dir: Path, predictions_dir: P
         return _blank(task_id, "predictions absent")
     if not protocol_ok(rows):
         return _blank(task_id, "enable_thinking must be false and shots must be 0")
-    return _score_loaded(task_id, loaded, rows)
+    return _score_loaded(task_id, loaded, rows, weights_dir)
 
 
-def _score_loaded(task_id: str, loaded, rows: list[dict]) -> dict:
+def _score_loaded(task_id: str, loaded, rows: list[dict], weights_dir: Path) -> dict:
     if task_id == "belebele":
         by_id = {row["id"]: str(row.get("prediction", "")) for row in rows}
         raw = belebele.score(loaded, by_id)
@@ -202,7 +220,7 @@ def _score_loaded(task_id: str, loaded, rows: list[dict]) -> dict:
     if task_id == "flores":
         return _score_flores(loaded, rows)
     if task_id == "burmese_san":
-        return _score_burmese_san(loaded, rows)
+        return _score_burmese_san(loaded, rows, weights_dir)
     if task_id == "gsm8k":
         by_id = {row["id"]: str(row.get("prediction", "")) for row in rows}
         raw = gsm8k.score(loaded, by_id)
@@ -231,21 +249,26 @@ def _score_flores(loaded: dict, rows: list[dict]) -> dict:
         "eng_Latn_to_mya_Mymr": None,
         "mya_Mymr_to_eng_Latn": None,
     }
-    if len(pairs) != FLORES_PAIRS:
-        cell["reason"] = f"expected {FLORES_PAIRS} pairs, found {len(pairs)}"
+    if not flores.can_publish(loaded):
+        if loaded.get("corpus") is None:
+            cell["reason"] = "files do not match the facebook/flores devtest digests"
+        else:
+            cell["reason"] = f"expected {FLORES_PAIRS} pairs, found {len(pairs)}"
         return cell
     if raw is None:
         cell["reason"] = "predictions do not cover both directions"
         return cell
     cell["status"] = "measured"
+    cell["score"] = None
     cell["eng_Latn_to_mya_Mymr"] = raw["eng_Latn_to_mya_Mymr"]
     cell["mya_Mymr_to_eng_Latn"] = raw["mya_Mymr_to_eng_Latn"]
     cell["items"] = len(pairs)
-    cell.pop("reason", None)
     return cell
 
 
-def _score_burmese_san(items: list[dict], rows: list[dict]) -> dict:
+def _score_burmese_san(loaded: dict, rows: list[dict], weights_dir: Path) -> dict:
+    items = loaded["items"]
+    prompts = loaded.get("prompts")
     cell = burmese_san_model_cell()
     predictions = {str(row["id"]): row for row in rows if "id" in row}
     groups = burmese_san.grouped(items)
@@ -254,25 +277,40 @@ def _score_burmese_san(items: list[dict], rows: list[dict]) -> dict:
         group = groups[spec_name]
         expected = burmese_san.EXPECTED[spec_name]
         metric = cell["tasks"][spec_name]["metric"]
-        if spec_name == "mt":
-            task_cell = empty_cell(metric)
+        ready = burmese_san.task_ready(spec_name, group)
+        if not ready:
+            task_cell = gate(expected, len(group), None, metric)
             task_cell["expected_items"] = expected
-            if burmese_san.task_ready("mt", group):
-                task_cell["reason"] = "MetricX-24 is not computed"
-            else:
-                task_cell["reason"] = f"expected {expected} items, found {len(group)}"
             cell["tasks"][spec_name] = task_cell
             task_scores[spec_name] = None
             continue
-        ready = burmese_san.task_ready(spec_name, group)
-        raw = burmese_san.score_task(spec_name, group, predictions) if ready else None
+        if not prompts:
+            task_cell = empty_cell(metric)
+            task_cell["expected_items"] = expected
+            task_cell["reason"] = "Burmese prompt templates are absent"
+            cell["tasks"][spec_name] = task_cell
+            task_scores[spec_name] = None
+            continue
+        if spec_name == "mt":
+            raw, reason = _metricx_score(group, predictions, weights_dir)
+        else:
+            covered = all(item["id"] in predictions for item in group)
+            raw = burmese_san.score_task(spec_name, group, predictions) if covered else None
+            if not covered:
+                reason = "predictions do not cover every item"
+            elif spec_name == "as" and raw is None:
+                reason = "XL-Sum multilingual ROUGE-L is not available"
+            else:
+                reason = None
         task_cell = gate(expected, len(group), raw, metric)
-        if ready and raw is None:
-            task_cell["reason"] = "predictions do not cover every item"
         task_cell["expected_items"] = expected
+        if reason and task_cell["score"] is None:
+            task_cell["reason"] = reason
         cell["tasks"][spec_name] = task_cell
         task_scores[spec_name] = task_cell["score"]
-    macro = macro_average(task_scores, burmese_san.TASK_NAMES, None)
+    macro = macro_average(
+        task_scores, burmese_san.TASK_NAMES, task_scores.get("mt")
+    )
     if macro is None or len(items) != BURMESE_SAN_ITEMS:
         cell["status"] = NOT_MEASURED
         cell["score"] = None
@@ -284,6 +322,28 @@ def _score_burmese_san(items: list[dict], rows: list[dict]) -> dict:
     cell["score"] = macro
     cell["items"] = len(items)
     return cell
+
+
+def _metricx_score(group: list[dict], predictions: dict[str, dict], weights_dir: Path):
+    if not metricx.scale_is_declared():
+        return None, "MetricX-24 scale is not the declared normalization"
+    checkpoint = metricx.find_checkpoint(weights_dir)
+    if checkpoint is None:
+        return None, "MetricX-24 checkpoint is absent"
+    if any(item["id"] not in predictions for item in group):
+        return None, "predictions do not cover every item"
+    examples = [
+        {
+            "source": item["input"],
+            "candidate": str(predictions[item["id"]].get("prediction", "")),
+            "reference": item["label"],
+        }
+        for item in group
+    ]
+    try:
+        return metricx.normalized_mean(examples, checkpoint), None
+    except (OSError, RuntimeError, ValueError, ImportError, KeyError):
+        return None, "MetricX-24 checkpoint could not be scored"
 
 
 def _load_task(task_id: str, data_dir: Path):
@@ -342,7 +402,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "report":
         payload = build_report(args.data_dir, args.weights_dir, args.predictions_dir)
         write_report(payload, args.out)
-        json.dump({"status": NOT_MEASURED, "out": str(args.out)}, sys.stdout)
+        json.dump(
+            {"status": report_stdout_status(payload), "out": str(args.out)},
+            sys.stdout,
+        )
         sys.stdout.write("\n")
         return 0
 
@@ -365,6 +428,22 @@ def main(argv: list[str] | None = None) -> int:
     json.dump(results, sys.stdout, ensure_ascii=False)
     sys.stdout.write("\n")
     return 0
+
+
+def report_stdout_status(report: dict) -> str:
+    """Say not measured only when every task cell is still unmeasured."""
+    statuses = []
+    for task in report["tasks"].values():
+        for cell in task["models"].values():
+            statuses.append(cell["status"])
+            for nested in cell.get("tasks", {}).values():
+                if isinstance(nested, dict) and "status" in nested:
+                    statuses.append(nested["status"])
+    if statuses and all(status == NOT_MEASURED for status in statuses):
+        return NOT_MEASURED
+    if any(status == "measured" for status in statuses):
+        return "measured"
+    return "incomplete"
 
 
 def _add_dirs(parser: argparse.ArgumentParser) -> None:

@@ -12,6 +12,27 @@ from pathlib import Path
 from burmeseai.eval.schema import MODELS, PADAUK_FILENAME, WEIGHT_SUFFIXES
 
 
+def call_chat_template(tokenizer, messages):
+    """Pass enable_thinking false. A template that rejects the flag raises."""
+    return tokenizer.apply_chat_template(
+        messages,
+        add_generation_prompt=True,
+        tokenize=True,
+        return_tensors="pt",
+        enable_thinking=False,
+    )
+
+
+def gguf_template_kwargs(parameters) -> dict:
+    """Require a parameter that can carry enable_thinking false."""
+    accepts = "chat_template_kwargs" in parameters or any(
+        item.kind == inspect.Parameter.VAR_KEYWORD for item in parameters.values()
+    )
+    if not accepts:
+        raise RuntimeError("the GGUF chat call cannot take enable_thinking")
+    return {"chat_template_kwargs": {"enable_thinking": False}}
+
+
 def find_weights(model_id: str, weights_dir: Path) -> Path | None:
     root = weights_dir / model_id
     if not root.is_dir():
@@ -67,11 +88,7 @@ def _gguf_generator(weight_path: Path, max_new_tokens: int):
             "temperature": 0.0,
             "max_tokens": max_new_tokens,
         }
-        parameters = signature.parameters
-        if "chat_template_kwargs" in parameters or any(
-            item.kind == item.VAR_KEYWORD for item in parameters.values()
-        ):
-            call["chat_template_kwargs"] = {"enable_thinking": False}
+        call.update(gguf_template_kwargs(signature.parameters))
         result = llm.create_chat_completion(**call)
         return str(result["choices"][0]["message"]["content"])
 
@@ -94,21 +111,7 @@ def _hf_generator(weight_path: Path, max_new_tokens: int):
         if enable_thinking:
             raise ValueError("enable_thinking must be false")
         messages = [{"role": "user", "content": prompt}]
-        try:
-            encoded = tokenizer.apply_chat_template(
-                messages,
-                add_generation_prompt=True,
-                tokenize=True,
-                return_tensors="pt",
-                enable_thinking=False,
-            )
-        except TypeError:
-            encoded = tokenizer.apply_chat_template(
-                messages,
-                add_generation_prompt=True,
-                tokenize=True,
-                return_tensors="pt",
-            )
+        encoded = call_chat_template(tokenizer, messages)
         if hasattr(encoded, "input_ids"):
             inputs = {key: value.to("cpu") for key, value in encoded.items()}
             input_length = inputs["input_ids"].shape[-1]

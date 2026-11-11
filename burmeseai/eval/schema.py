@@ -271,7 +271,8 @@ def empty_report(frozen_ids: tuple[str, ...]) -> dict:
                 "macro_note": (
                     "Unweighted mean of the seven task scores on a 0-100 scale. "
                     "Empty until each task has a score from a run. "
-                    "MetricX-24 is not rescaled here."
+                    "Machine translation uses a local MetricX-24 checkpoint and "
+                    "the declared 0-100 normalization."
                 ),
                 "shots": 0,
                 "enable_thinking": False,
