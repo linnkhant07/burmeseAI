@@ -5,7 +5,12 @@ from __future__ import annotations
 import unittest
 
 from burmeseai.eval.chrf import corpus_chrf_pp
-from burmeseai.eval.metricx import normalize_metricx, scale_is_declared
+from burmeseai.eval.metricx import (
+    drop_trailing_eos,
+    normalize_metricx,
+    scale_is_declared,
+    tied_rescale_factor,
+)
 from burmeseai.eval.schema import NOT_MEASURED
 from burmeseai.eval.scoring import (
     gate,
@@ -80,6 +85,13 @@ class MetricTest(unittest.TestCase):
         self.assertEqual(normalize_metricx(0), 100.0)
         self.assertEqual(normalize_metricx(25), 0.0)
         self.assertEqual(normalize_metricx(12.5), 50.0)
+        self.assertEqual(drop_trailing_eos([4, 5, 1], [1, 1, 1]), ([4, 5], [1, 1]))
+        with self.assertRaises(RuntimeError):
+            drop_trailing_eos([1], [1])
+        self.assertEqual(tied_rescale_factor(False, 4096), 1.0)
+        self.assertEqual(tied_rescale_factor(True, 4096), 4096 ** -0.5)
+        with self.assertRaises(RuntimeError):
+            tied_rescale_factor(True, None)
 
     def test_protocol_and_label_rules(self) -> None:
         self.assertTrue(protocol_ok([{"enable_thinking": False, "shots": 0}]))

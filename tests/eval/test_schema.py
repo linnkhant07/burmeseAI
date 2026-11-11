@@ -92,6 +92,9 @@ class SchemaTest(unittest.TestCase):
         self.assertEqual(licenses["cr"], "CC BY 4.0")
         self.assertEqual(licenses["nli"], "CC BY-NC 4.0")
         self.assertEqual(licenses["as"], "CC BY-NC-SA 4.0")
+        metrics = {row["task"]: row["metric"] for row in san["licenses"]}
+        self.assertEqual(metrics["as"], "xlsum_rouge_l")
+        self.assertNotEqual(metrics["as"], "rouge_l_char_f1")
         self.assertEqual(licenses["mt"], "CC BY-SA 4.0")
         self.assertEqual(
             [row["task"] for row in BURMESE_SAN_TASKS],

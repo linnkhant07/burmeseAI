@@ -108,7 +108,7 @@ BURMESE_SAN_TASKS = (
         "dataset": "XL-Sum",
         "license": "CC BY-NC-SA 4.0",
         "items": 100,
-        "metric": "rouge_l_char_f1",
+        "metric": "xlsum_rouge_l",
     },
     {
         "task": "mt",

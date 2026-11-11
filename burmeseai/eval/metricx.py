@@ -91,6 +91,31 @@ def _prompt(example: dict) -> str:
     )
 
 
+MAX_INPUT_LENGTH = 1024
+
+
+def drop_trailing_eos(
+    input_ids: list[int], attention_mask: list[int]
+) -> tuple[list[int], list[int]]:
+    """Drop the final token the way metricx24/predict.py drops EOS."""
+    if not input_ids or not attention_mask or len(input_ids) != len(attention_mask):
+        raise RuntimeError("MetricX-24 input has no trailing token to drop")
+    trimmed_ids = input_ids[:-1]
+    trimmed_mask = attention_mask[:-1]
+    if not trimmed_ids or not any(trimmed_mask):
+        raise RuntimeError("MetricX-24 input is empty after dropping EOS")
+    return trimmed_ids, trimmed_mask
+
+
+def tied_rescale_factor(tie_word_embeddings: bool, d_model: int | None) -> float:
+    """mT5 multiplies the decoder state by d_model ** -0.5 when the head is tied."""
+    if not tie_word_embeddings:
+        return 1.0
+    if not isinstance(d_model, int) or d_model <= 0:
+        raise RuntimeError("MetricX-24 tied embeddings have no d_model")
+    return float(d_model) ** -0.5
+
+
 def _raw_errors(examples: list[dict], checkpoint: Path) -> list[float]:
     import torch
     from transformers import AutoTokenizer, MT5ForConditionalGeneration
@@ -99,36 +124,60 @@ def _raw_errors(examples: list[dict], checkpoint: Path) -> list[float]:
     model = MT5ForConditionalGeneration.from_pretrained(checkpoint, local_files_only=True)
     model.to("cpu")
     model.eval()
+    scale = tied_rescale_factor(
+        bool(getattr(model.config, "tie_word_embeddings", False)),
+        getattr(model.config, "d_model", None),
+    )
+    pad_id = tokenizer.pad_token_id
+    if pad_id is None:
+        raise RuntimeError("MetricX-24 tokenizer has no pad id")
     errors: list[float] = []
     batch_size = 4
     texts = [_prompt(example) for example in examples]
     for start in range(0, len(texts), batch_size):
         batch = texts[start : start + batch_size]
-        encoded = tokenizer(
-            batch,
-            return_tensors="pt",
-            padding=True,
-            truncation=True,
-            max_length=1024,
-        )
-        encoded = {key: value.to("cpu") for key, value in encoded.items()}
+        rows = [_tokenize_without_eos(tokenizer, text) for text in batch]
+        width = max(len(ids) for ids, _mask in rows)
+        input_rows = []
+        mask_rows = []
+        for ids, mask in rows:
+            pad = width - len(ids)
+            input_rows.append(ids + [pad_id] * pad)
+            mask_rows.append(mask + [0] * pad)
+        input_ids = torch.tensor(input_rows, dtype=torch.long)
+        attention_mask = torch.tensor(mask_rows, dtype=torch.long)
         with torch.no_grad():
             encoder_outputs = model.get_encoder()(
-                input_ids=encoded["input_ids"],
-                attention_mask=encoded["attention_mask"],
+                input_ids=input_ids,
+                attention_mask=attention_mask,
             )
             decoder_input_ids = torch.zeros(
-                (encoded["input_ids"].size(0), 1),
+                (input_ids.size(0), 1),
                 dtype=torch.long,
             )
             decoder_outputs = model.get_decoder()(
                 input_ids=decoder_input_ids,
                 encoder_hidden_states=encoder_outputs.last_hidden_state,
-                encoder_attention_mask=encoded["attention_mask"],
+                encoder_attention_mask=attention_mask,
             )
-            logits = model.lm_head(decoder_outputs.last_hidden_state)
+            sequence_output = decoder_outputs.last_hidden_state
+            if scale != 1.0:
+                sequence_output = sequence_output * scale
+            logits = model.lm_head(sequence_output)
             if logits.size(-1) <= EXTRA_ID_10:
                 raise RuntimeError("MetricX-24 logit index is outside the vocabulary")
             predictions = torch.clamp(logits[:, 0, EXTRA_ID_10], 0, 25)
         errors.extend(float(value) for value in predictions.tolist())
     return errors
+
+
+def _tokenize_without_eos(tokenizer, text: str) -> tuple[list[int], list[int]]:
+    encoded = tokenizer(
+        text,
+        max_length=MAX_INPUT_LENGTH,
+        truncation=True,
+        padding=False,
+    )
+    input_ids = [int(token) for token in encoded["input_ids"]]
+    attention_mask = [int(bit) for bit in encoded["attention_mask"]]
+    return drop_trailing_eos(input_ids, attention_mask)
