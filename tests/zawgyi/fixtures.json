@@ -1,0 +1,165 @@
+{
+  "commit": "e66860c30b616227b070ab12cb9e995dd99917fb",
+  "rows": [
+    {
+      "name": "zawgyi-word-inside-unicode",
+      "kind": "mixed",
+      "one_span": false,
+      "beats_whole_line": true,
+      "label": "mixed",
+      "words": 3,
+      "input": "ကျွန်တော် ရန္ကုန္ သွားမည်",
+      "expected": "ကျွန်တော် ရန်ကုန် သွားမည်"
+    },
+    {
+      "name": "zawgyi-run-inside-unicode",
+      "kind": "mixed",
+      "one_span": false,
+      "beats_whole_line": true,
+      "label": "mixed",
+      "words": 5,
+      "input": "ဒီနေ့ ရာသီဥတု ေကာင္းသည္ ဟု ပြောသည်",
+      "expected": "ဒီနေ့ ရာသီဥတု ကောင်းသည် ဟု ပြောသည်"
+    },
+    {
+      "name": "scattered-zawgyi-words",
+      "kind": "mixed",
+      "one_span": false,
+      "beats_whole_line": true,
+      "label": "mixed",
+      "words": 4,
+      "input": "ေရ သောက်သည် ထမင္း စားသည်",
+      "expected": "ရေ သောက်သည် ထမင်း စားသည်"
+    },
+    {
+      "name": "zawgyi-majority-keeps-unicode",
+      "kind": "mixed",
+      "one_span": false,
+      "beats_whole_line": true,
+      "label": "mixed",
+      "words": 3,
+      "input": "ကြၽန္ေတာ္ စာအုပ္ ဖတ်သည်",
+      "expected": "ကျွန်တော် စာအုပ် ဖတ်သည်"
+    },
+    {
+      "name": "thanks-between-unicode",
+      "kind": "mixed",
+      "one_span": false,
+      "beats_whole_line": true,
+      "label": "mixed",
+      "words": 3,
+      "input": "မင်္ဂလာပါ ေက်းဇူးတင္ပါတယ္ ဒီနေ့",
+      "expected": "မင်္ဂလာပါ ကျေးဇူးတင်ပါတယ် ဒီနေ့"
+    },
+    {
+      "name": "punctuation-around-zawgyi",
+      "kind": "mixed",
+      "one_span": false,
+      "beats_whole_line": true,
+      "label": "mixed",
+      "words": 4,
+      "input": "ရန်ကုန်၊ ေနျပည္ေတာ္ နှင့် မြန်မာ။",
+      "expected": "ရန်ကုန်၊ နေပြည်တော် နှင့် မြန်မာ။"
+    },
+    {
+      "name": "whitespace-inside-mixed-line",
+      "kind": "mixed",
+      "one_span": false,
+      "beats_whole_line": true,
+      "label": "mixed",
+      "words": 3,
+      "input": "ကျွန်တော်  ရန္ကုန္\tသွားမည်",
+      "expected": "ကျွန်တော်  ရန်ကုန်\tသွားမည်"
+    },
+    {
+      "name": "clean-unicode",
+      "kind": "unicode",
+      "one_span": false,
+      "beats_whole_line": false,
+      "label": "unicode",
+      "words": 3,
+      "input": "ကျွန်တော် စာအုပ် ဖတ်သည်",
+      "expected": "ကျွန်တော် စာအုပ် ဖတ်သည်"
+    },
+    {
+      "name": "clean-unicode-zero-width-space",
+      "kind": "unicode",
+      "one_span": false,
+      "beats_whole_line": false,
+      "label": "unicode",
+      "words": 2,
+      "input": "အဆင်​ပြေ​သော နေရာ",
+      "expected": "အဆင်​ပြေ​သော နေရာ"
+    },
+    {
+      "name": "clean-zawgyi",
+      "kind": "zawgyi",
+      "one_span": false,
+      "beats_whole_line": false,
+      "label": "zawgyi",
+      "words": 3,
+      "input": "ကြၽန္ေတာ္ စာအုပ္ ဖတ္သည္",
+      "expected": "ကျွန်တော် စာအုပ် ဖတ်သည်"
+    },
+    {
+      "name": "spaceless-unicode",
+      "kind": "unicode",
+      "one_span": true,
+      "beats_whole_line": false,
+      "label": "unicode",
+      "words": 1,
+      "input": "ကျွန်တော်",
+      "expected": "ကျွန်တော်"
+    },
+    {
+      "name": "spaceless-greeting",
+      "kind": "unicode",
+      "one_span": true,
+      "beats_whole_line": false,
+      "label": "unicode",
+      "words": 1,
+      "input": "မင်္ဂလာပါ",
+      "expected": "မင်္ဂလာပါ"
+    },
+    {
+      "name": "spaceless-zawgyi",
+      "kind": "zawgyi",
+      "one_span": true,
+      "beats_whole_line": false,
+      "label": "zawgyi",
+      "words": 1,
+      "input": "ေက်းဇူးတင္ပါတယ္",
+      "expected": "ကျေးဇူးတင်ပါတယ်"
+    },
+    {
+      "name": "spaceless-jammed",
+      "kind": "one-span",
+      "one_span": true,
+      "beats_whole_line": false,
+      "label": "zawgyi",
+      "words": 1,
+      "input": "မင်္ဂလာပါေက်းဇူးတင္ပါတယ္",
+      "expected": "မင်ျဂလာပါကျေးဇူးတင်ပါတယ်"
+    },
+    {
+      "name": "spaceless-repair",
+      "kind": "one-span",
+      "one_span": true,
+      "beats_whole_line": true,
+      "label": "repaired",
+      "words": 1,
+      "input": "ကျွန်တော်စာအုပ္",
+      "expected": "ကျွန်တော်စာအုပ်"
+    },
+    {
+      "name": "english",
+      "kind": "none",
+      "one_span": false,
+      "beats_whole_line": false,
+      "label": "none",
+      "words": 0,
+      "input": "hello",
+      "expected": "hello"
+    }
+  ]
+}
